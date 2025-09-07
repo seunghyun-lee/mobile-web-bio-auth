@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>생체 인증 로그인</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            padding: 40px 30px;
+            max-width: 400px;
+            width: 100%;
+            text-align: center;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .auth-icon {
+            width: 80px;
+            height: 80px;
+            margin: 20px auto;
+            border-radius: 50%;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+            color: white;
+            transition: transform 0.3s ease;
+        }
+
+        .auth-icon:hover {
+            transform: scale(1.1);
+        }
+
+        .auth-button {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin: 15px 0;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .auth-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
+        }
+
+        .auth-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .status-message {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+
+        .status-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status-info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .device-info {
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(102, 126, 234, 0.1);
+            border-radius: 8px;
+            font-size: 12px;
+            color: #555;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 생체 인증 로그인</h1>
+        <p class="subtitle">안전하고 편리한 로그인을 경험해보세요</p>
+        
+        <div class="auth-icon" id="authIcon">
+            <span id="iconText">🔒</span>
+        </div>
+
+        <button class="auth-button" id="registerBtn">
+            생체 인증 등록
+        </button>
+
+        <button class="auth-button" id="loginBtn" disabled>
+            <span id="loginText">생체 인증으로 로그인</span>
+        </button>
+
+        <div class="status-message hidden" id="statusMessage"></div>
+
+        <div class="device-info" id="deviceInfo">
+            기기 정보를 확인 중...
+        </div>
+    </div>
+
+    <script>
+        class BiometricAuth {
+            constructor() {
+                this.isSupported = false;
+                this.isRegistered = false;
+                this.deviceType = this.detectDevice();
+                this.init();
+            }
+
+            detectDevice() {
+                const userAgent = navigator.userAgent;
+                if (/iPhone|iPad|iPod/i.test(userAgent)) {
+                    return 'iOS';
+                } else if (/Android/i.test(userAgent)) {
+                    return 'Android';
+                } else {
+                    return 'Desktop';
+                }
+            }
+
+            async init() {
+                await this.checkSupport();
+                this.updateUI();
+                this.bindEvents();
+            }
+
+            async checkSupport() {
+                if (!window.PublicKeyCredential) {
+                    this.showStatus('이 브라우저는 생체 인증을 지원하지 않습니다.', 'error');
+                    return;
+                }
+
+                try {
+                    const available = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+                    this.isSupported = available;
+                    
+                    if (!available) {
+                        this.showStatus('이 기기는 생체 인증을 지원하지 않습니다.', 'error');
+                    }
+                } catch (error) {
+                    this.showStatus('생체 인증 지원 확인 중 오류가 발생했습니다.', 'error');
+                }
+            }
+
+            updateUI() {
+                const deviceInfo = document.getElementById('deviceInfo');
+                const authIcon = document.getElementById('iconText');
+                const registerBtn = document.getElementById('registerBtn');
+                const loginBtn = document.getElementById('loginBtn');
+
+                let deviceText = '';
+                let iconEmoji = '🔒';
+
+                switch (this.deviceType) {
+                    case 'iOS':
+                        deviceText = '🍎 iOS 기기 감지됨 - Face ID 또는 Touch ID 사용 가능';
+                        iconEmoji = '👤';
+                        break;
+                    case 'Android':
+                        deviceText = '🤖 Android 기기 감지됨 - 지문 인식 또는 얼굴 인식 사용 가능';
+                        iconEmoji = '👆';
+                        break;
+                    default:
+                        deviceText = '💻 데스크톱 브라우저 - Windows Hello 또는 기타 생체 인증 사용 가능';
+                        iconEmoji = '🔐';
+                }
+
+                deviceInfo.textContent = deviceText;
+                authIcon.textContent = iconEmoji;
+
+                if (!this.isSupported) {
+                    registerBtn.disabled = true;
+                    loginBtn.disabled = true;
+                }
+
+                // 등록된 인증 정보가 있는지 확인
+                const savedCredential = this.getStoredCredential();
+                if (savedCredential) {
+                    this.isRegistered = true;
+                    registerBtn.textContent = '생체 인증 재등록';
+                    loginBtn.disabled = false;
+                }
+            }
+
+            bindEvents() {
+                document.getElementById('registerBtn').addEventListener('click', () => this.register());
+                document.getElementById('loginBtn').addEventListener('click', () => this.login());
+            }
+
+            async register() {
+                if (!this.isSupported) {
+                    this.showStatus('생체 인증이 지원되지 않는 기기입니다.', 'error');
+                    return;
+                }
+
+                try {
+                    this.showLoading('등록 중...');
+
+                    const credential = await navigator.credentials.create({
+                        publicKey: {
+                            challenge: new Uint8Array(32).map(() => Math.floor(Math.random() * 256)),
+                            rp: {
+                                name: "생체 인증 데모",
+                                id: window.location.hostname,
+                            },
+                            user: {
+                                id: new TextEncoder().encode("user123"),
+                                name: "demo@example.com",
+                                displayName: "데모 사용자",
+                            },
+                            pubKeyCredParams: [{
+                                type: "public-key",
+                                alg: -7
+                            }],
+                            authenticatorSelection: {
+                                authenticatorAttachment: "platform",
+                                userVerification: "required"
+                            },
+                            timeout: 60000,
+                            attestation: "direct"
+                        }
+                    });
+
+                    if (credential) {
+                        this.storeCredential(credential);
+                        this.isRegistered = true;
+                        document.getElementById('loginBtn').disabled = false;
+                        document.getElementById('registerBtn').textContent = '생체 인증 재등록';
+                        document.getElementById('iconText').textContent = '✅';
+                        
+                        this.showStatus(`생체 인증이 성공적으로 등록되었습니다! (${this.getAuthMethodName()})`, 'success');
+                    }
+                } catch (error) {
+                    console.error('Registration error:', error);
+                    
+                    let errorMessage = '등록 중 오류가 발생했습니다.';
+                    
+                    if (error.name === 'NotAllowedError') {
+                        errorMessage = '생체 인증 등록이 취소되었습니다.';
+                    } else if (error.name === 'NotSupportedError') {
+                        errorMessage = '이 기기에서는 생체 인증을 지원하지 않습니다.';
+                    } else if (error.name === 'SecurityError') {
+                        errorMessage = '보안상의 이유로 생체 인증을 사용할 수 없습니다. HTTPS 연결이 필요합니다.';
+                    }
+                    
+                    this.showStatus(errorMessage, 'error');
+                    document.getElementById('iconText').textContent = '❌';
+                }
+            }
+
+            async login() {
+                if (!this.isRegistered) {
+                    this.showStatus('먼저 생체 인증을 등록해주세요.', 'error');
+                    return;
+                }
+
+                try {
+                    this.showLoading('인증 중...');
+
+                    const storedCredential = this.getStoredCredential();
+                    
+                    const assertion = await navigator.credentials.get({
+                        publicKey: {
+                            challenge: new Uint8Array(32).map(() => Math.floor(Math.random() * 256)),
+                            allowCredentials: [{
+                                type: "public-key",
+                                id: this.base64ToArrayBuffer(storedCredential.credentialId)
+                            }],
+                            userVerification: "required",
+                            timeout: 60000
+                        }
+                    });
+
+                    if (assertion) {
+                        document.getElementById('iconText').textContent = '🎉';
+                        this.showStatus(`로그인 성공! ${this.getAuthMethodName()}으로 인증되었습니다.`, 'success');
+                        
+                        // 실제 앱에서는 여기서 서버로 인증 결과를 전송
+                        setTimeout(() => {
+                            this.showStatus('환영합니다! 메인 페이지로 이동합니다...', 'info');
+                        }, 2000);
+                    }
+                } catch (error) {
+                    console.error('Login error:', error);
+                    
+                    let errorMessage = '로그인 중 오류가 발생했습니다.';
+                    
+                    if (error.name === 'NotAllowedError') {
+                        errorMessage = '생체 인증이 취소되었거나 실패했습니다.';
+                    } else if (error.name === 'InvalidStateError') {
+                        errorMessage = '등록된 생체 정보를 찾을 수 없습니다. 다시 등록해주세요.';
+                    }
+                    
+                    this.showStatus(errorMessage, 'error');
+                    document.getElementById('iconText').textContent = '❌';
+                }
+            }
+
+            getAuthMethodName() {
+                switch (this.deviceType) {
+                    case 'iOS':
+                        return 'Face ID/Touch ID';
+                    case 'Android':
+                        return '지문 인식';
+                    default:
+                        return '생체 인증';
+                }
+            }
+
+            showLoading(message) {
+                const loginBtn = document.getElementById('loginBtn');
+                const loginText = document.getElementById('loginText');
+                
+                if (message.includes('인증 중')) {
+                    loginText.innerHTML = `<span class="spinner"></span>${message}`;
+                    loginBtn.disabled = true;
+                } else {
+                    document.getElementById('registerBtn').innerHTML = `<span class="spinner"></span>${message}`;
+                    document.getElementById('registerBtn').disabled = true;
+                }
+            }
+
+            showStatus(message, type) {
+                const statusElement = document.getElementById('statusMessage');
+                statusElement.textContent = message;
+                statusElement.className = `status-message status-${type}`;
+                
+                // 로딩 상태 초기화
+                document.getElementById('registerBtn').disabled = false;
+                document.getElementById('loginBtn').disabled = !this.isRegistered;
+                document.getElementById('registerBtn').innerHTML = this.isRegistered ? '생체 인증 재등록' : '생체 인증 등록';
+                document.getElementById('loginText').textContent = '생체 인증으로 로그인';
+                
+                setTimeout(() => {
+                    statusElement.classList.add('hidden');
+                }, 5000);
+            }
+
+            storeCredential(credential) {
+                const credentialData = {
+                    credentialId: this.arrayBufferToBase64(credential.rawId),
+                    deviceType: this.deviceType,
+                    timestamp: Date.now()
+                };
+                
+                // 실제 앱에서는 서버에 저장해야 하지만, 데모용으로 메모리에 저장
+                window.storedCredential = credentialData;
+            }
+
+            getStoredCredential() {
+                return window.storedCredential || null;
+            }
+
+            arrayBufferToBase64(buffer) {
+                const binary = String.fromCharCode.apply(null, new Uint8Array(buffer));
+                return btoa(binary);
+            }
+
+            base64ToArrayBuffer(base64) {
+                const binary = atob(base64);
+                const bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i++) {
+                    bytes[i] = binary.charCodeAt(i);
+                }
+                return bytes.buffer;
+            }
+        }
+
+        // 페이지 로드 시 초기화
+        document.addEventListener('DOMContentLoaded', () => {
+            new BiometricAuth();
+        });
+
+        // 개발자 도구에서 상태 확인용
+        window.checkWebAuthnSupport = async () => {
+            console.log('PublicKeyCredential 지원:', !!window.PublicKeyCredential);
+            if (window.PublicKeyCredential) {
+                try {
+                    const available = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+                    console.log('플랫폼 인증기 사용 가능:', available);
+                } catch (error) {
+                    console.error('확인 중 오류:', error);
+                }
+            }
+        };
+    </script>
+</body>
+</html>
